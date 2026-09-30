@@ -3,23 +3,18 @@ parameter WIDTH = 32)
 (
 input logic [WIDTH-1:0] input1,
 input logic [WIDTH-1:0] input2,
-input logic [3:0] sel,
+input logic [2:0] sel,
 output logic [WIDTH-1:0] out,
 output logic overflow
 );
 
-    localparam logic [3:0] SEL_MULTIPLY = 4'h0;
-    localparam logic [3:0] SEL_OR       = 4'h1;
-    localparam logic [3:0] SEL_REVERSE  = 4'h2;
-    localparam logic [3:0] SEL_SUBTRACT = 4'h3;
-    localparam logic [3:0] SEL_NOT      = 4'h4;
-    localparam logic [3:0] SEL_SHIFT_L  = 4'h5;
-    localparam logic [3:0] SEL_XOR      = 4'h6;
-    localparam logic [3:0] SEL_SWAP     = 4'h7;
-    localparam logic [3:0] SEL_ADD      = 4'h8;
-    localparam logic [3:0] SEL_NOR      = 4'h9;
-    localparam logic [3:0] SEL_SHIFT_R  = 4'hA;
-    localparam logic [3:0] SEL_AND      = 4'hB;
+    localparam logic [2:0] SEL_ADD      = 3'h0;
+    localparam logic [2:0] SEL_SUB      = 3'h1;
+    localparam logic [2:0] SEL_AND      = 3'h2;
+    localparam logic [2:0] SEL_OR       = 3'h3;
+    localparam logic [2:0] SEL_XOR      = 3'h4;
+    localparam logic [2:0] SEL_NOT      = 3'h5;
+    localparam logic [2:0] SEL_SLT      = 3'h6;
 
     logic [(2*WIDTH)-1:0] multiply_result;
     logic [WIDTH:0]       arithmetic_result;
@@ -32,22 +27,11 @@ output logic overflow
         arithmetic_result = '0;
 
         case (sel)
-            SEL_MULTIPLY: begin
-                multiply_result = input1 * input2;
-                out = multiply_result[WIDTH-1:0];
-                overflow = |multiply_result[(2*WIDTH)-1:WIDTH];
-            end
-
             SEL_OR: begin
                 out = input1 | input2;
             end
 
-            SEL_REVERSE: begin
-                for (i = 0; i < WIDTH; i = i + 1)
-                    out[i] = input1[WIDTH-1-i];
-            end
-
-            SEL_SUBTRACT: begin
+            SEL_SUB: begin
                 out = input1 - input2;
                 overflow = (input1 < input2);
             end
@@ -56,18 +40,8 @@ output logic overflow
                 out = ~input1;
             end
 
-            SEL_SHIFT_L: begin
-                out = input1 << 1;
-                overflow = input1[WIDTH-1];
-            end
-
             SEL_XOR: begin
                 out = input1 ^ input2;
-            end
-
-            SEL_SWAP: begin
-                for (i = 0; i < WIDTH; i = i + 1)
-                    out[i] = input1[(i + (WIDTH/2)) % WIDTH];
             end
 
             SEL_ADD: begin
@@ -77,17 +51,12 @@ output logic overflow
                 overflow = arithmetic_result[WIDTH];
             end
 
-            SEL_NOR: begin
-                out = ~(input1 | input2);
-            end
-
-            SEL_SHIFT_R: begin
-                out = input1 >> 1;
-                overflow = input1[0];
-            end
-
             SEL_AND: begin
                 out = input1 & input2;
+            end
+
+            SEL_SLT: begin
+                out = ($signed(input1) < $signed(input2)) ? 1'b1 : 1'b0;
             end
 
             default: begin

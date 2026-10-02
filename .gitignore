@@ -1,0 +1,5 @@
+# ModelSim output
+work/
+transcript
+*.wlf
+modelsim.ini

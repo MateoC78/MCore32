@@ -13,8 +13,8 @@ module regfile (
     logic [31:0] regs [31:0];
 
     // Read ports
-    assign rd1 = regs[rs1];
-    assign rd2 = regs[rs2];
+    assign rd1 = (rs1 == 5'd0) ? 32'b0 : regs[rs1];
+    assign rd2 = (rs2 == 5'd0) ? 32'b0 : regs[rs2];
 
     // Write port
     always_ff @(posedge clk or posedge rst) begin

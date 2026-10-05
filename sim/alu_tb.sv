@@ -2,11 +2,24 @@ module alu_nwidth_tb;
 
     parameter WIDTH = 32;
 
+    localparam logic [3:0] SEL_ADD      = 4'b0000;
+    localparam logic [3:0] SEL_SUB      = 4'b1000;
+    localparam logic [3:0] SEL_SLL      = 4'b0001;
+    localparam logic [3:0] SEL_SLT      = 4'b0010;
+    localparam logic [3:0] SEL_SLTU     = 4'b0011;
+    localparam logic [3:0] SEL_XOR      = 4'b0100;
+    localparam logic [3:0] SEL_SRL      = 4'b0101;
+    localparam logic [3:0] SEL_SRA      = 4'b1101;
+    localparam logic [3:0] SEL_OR       = 4'b0110;
+    localparam logic [3:0] SEL_AND      = 4'b0111;
+
     logic [WIDTH-1:0] input1 = '0;
     logic [WIDTH-1:0] input2 = '0;
-    logic [      2:0] sel = '0;
+    logic [      3:0] sel = '0;
     logic [WIDTH-1:0] out;
     logic             overflow;
+
+    integer errors = 0;
 
     // Instantiate DUT
     alu_nwidth #(
@@ -19,79 +32,79 @@ module alu_nwidth_tb;
         .overflow(overflow)
     );
 
+    // Apply inputs, wait, and compare both outputs
+    task automatic check(input string            tag,
+                         input logic [3:0]       s,
+                         input logic [WIDTH-1:0] a,
+                         input logic [WIDTH-1:0] b,
+                         input logic [WIDTH-1:0] exp_out,
+                         input logic             exp_ovf);
+        input1 = a;
+        input2 = b;
+        sel    = s;
+        #10;
+        assert (out == exp_out)
+        else begin
+            $error("%s: %h, %h expected out=%h, got out=%h", tag, a, b, exp_out, out);
+            errors++;
+        end
+        assert (overflow == exp_ovf)
+        else begin
+            $error("%s: %h, %h expected overflow=%b, got overflow=%b", tag, a, b, exp_ovf, overflow);
+            errors++;
+        end
+    endtask
+
     initial begin
 
-        // Test sel = 3'b000, ADD
-        input1 = 32'h00000055;
-        input2 = 32'h00000555;
-        sel    = 3'b000;
-        #40;
-        assert (out == 32'h000005AA)
-        else $error("sel=000 (ADD) failed: expected out=000005AA, got out=%h", out);
-        assert (overflow == 1'b0)
-        else $error("sel=000 failed: expected overflow=0, got overflow=%b", overflow);
+        // ADD
+        check("ADD",          SEL_ADD,  32'h00000055, 32'h00000555, 32'h000005AA, 1'b0);
+        check("ADD carry",    SEL_ADD,  32'hFFFFFFFF, 32'h00000001, 32'h00000000, 1'b1);
 
-        // Test sel = 3'b001, SUB
-        input1 = 32'h00009BAA;
-        input2 = 32'h00000067;
-        sel    = 3'b001;
-        #40;
-        assert (out == 32'h00009B43)
-        else $error("sel=001 (SUB) failed: expected out=00009B43, got out=%h", out);
-        assert (overflow == 1'b0)
-        else $error("sel=001 failed: expected overflow=0, got overflow=%b", overflow);
+        // SUB
+        check("SUB",          SEL_SUB,  32'h00009BAA, 32'h00000067, 32'h00009B43, 1'b0);
+        check("SUB borrow",   SEL_SUB,  32'h00000001, 32'h00000002, 32'hFFFFFFFF, 1'b1);
 
-        // Test sel = 3'b010, AND
-        input1 = 32'hCCCCCCCC;
-        input2 = 32'hDECDABCF;
-        sel    = 3'b010;
-        #40;
-        assert (out == 32'hCCCC88CC)
-        else $error("sel=010 (AND) failed: expected out=CCCC88CC, got out=%h", out);
-        assert (overflow == 1'b0)
-        else $error("sel=010 failed: expected overflow=0, got overflow=%b", overflow);
+        // SLL
+        check("SLL",          SEL_SLL,  32'h0000000F, 32'h00000004, 32'h000000F0, 1'b0);
+        check("SLL by 31",    SEL_SLL,  32'h00000001, 32'h0000001F, 32'h80000000, 1'b0);
+        check("SLL low bits", SEL_SLL,  32'h00000001, 32'h00000021, 32'h00000002, 1'b0);
 
-        // Test sel = 3'b011, OR
-        input1 = 32'h0000BBBB;
-        input2 = 32'h00006789;
-        sel    = 3'b011;
-        #40;
-        assert (out == 32'h0000FFBB)
-        else $error("sel=011 (OR) failed: expected out=0000FFBB, got out=%h", out);
-        assert (overflow == 1'b0)
-        else $error("sel=011 failed: expected overflow=0, got overflow=%b", overflow);
+        // SLT (signed)
+        check("SLT",          SEL_SLT,  32'h00000005, 32'h000000A9, 32'h00000001, 1'b0);
+        check("SLT neg",      SEL_SLT,  32'hFFFFFFFF, 32'h00000005, 32'h00000001, 1'b0);
+        check("SLT false",    SEL_SLT,  32'h00000005, 32'hFFFFFFFF, 32'h00000000, 1'b0);
+        check("SLT equal",    SEL_SLT,  32'h00000007, 32'h00000007, 32'h00000000, 1'b0);
 
-        // Test sel = 3'b100, XOR
-        input1 = 32'h0000FFFF;
-        input2 = 32'h00000055;
-        sel    = 3'b100;
-        #40;
-        assert (out == 32'h0000FFAA)
-        else $error("sel=100 (XOR) failed: expected out=0000FFAA, got out=%h", out);
-        assert (overflow == 1'b0)
-        else $error("sel=100 failed: expected overflow=0, got overflow=%b", overflow);
+        // SLTU (unsigned)
+        check("SLTU",         SEL_SLTU, 32'h00000005, 32'h000000A9, 32'h00000001, 1'b0);
+        check("SLTU big",     SEL_SLTU, 32'hFFFFFFFF, 32'h00000005, 32'h00000000, 1'b0);
+        check("SLTU vs big",  SEL_SLTU, 32'h00000005, 32'hFFFFFFFF, 32'h00000001, 1'b0);
 
-        // Test sel = 3'b101, NOT
-        input1 = 32'h0000BBBB;
-        input2 = 32'h00000006;
-        sel    = 3'b101;
-        #40;
-        assert (out == 32'hFFFF4444)
-        else $error("sel=101 (NOT) failed: expected out=FFFF4444, got out=%h", out);
-        assert (overflow == 1'b0)
-        else $error("sel=101 failed: expected overflow=0, got overflow=%b", overflow);
+        // XOR
+        check("XOR",          SEL_XOR,  32'h0000FFFF, 32'h00000055, 32'h0000FFAA, 1'b0);
+        check("XOR -1 (NOT)", SEL_XOR,  32'h0000BBBB, 32'hFFFFFFFF, 32'hFFFF4444, 1'b0);
 
-        // Test sel = 3'b110, SLT
-        input1 = 32'h00000005;
-        input2 = 32'h000000A9;
-        sel    = 3'b110;
-        #40;
-        assert (out == 32'h00000001)
-        else $error("sel=110 failed: expected out=00000001, got out=%h", out);
-        assert (overflow == 1'b0)
-        else $error("sel=110 failed: expected overflow=0, got overflow=%b", overflow);
+        // SRL (logical, fills with 0)
+        check("SRL",          SEL_SRL,  32'h000000F0, 32'h00000004, 32'h0000000F, 1'b0);
+        check("SRL neg",      SEL_SRL,  32'h80000000, 32'h00000004, 32'h08000000, 1'b0);
 
-        $display("Simulation Finished!");
+        // SRA (arithmetic, fills with sign bit)
+        check("SRA",          SEL_SRA,  32'h000000F0, 32'h00000004, 32'h0000000F, 1'b0);
+        check("SRA neg",      SEL_SRA,  32'h80000000, 32'h00000004, 32'hF8000000, 1'b0);
+        check("SRA by 31",    SEL_SRA,  32'h80000000, 32'h0000001F, 32'hFFFFFFFF, 1'b0);
+
+        // OR
+        check("OR",           SEL_OR,   32'h0000BBBB, 32'h00006789, 32'h0000FFBB, 1'b0);
+
+        // AND
+        check("AND",          SEL_AND,  32'hCCCCCCCC, 32'hDECDABCF, 32'hCCCC88CC, 1'b0);
+
+        // Unused select code falls through to default
+        check("unused sel",   4'b1111,  32'h12345678, 32'h87654321, 32'h00000000, 1'b0);
+
+        if (errors == 0) $display("alu_tb PASSED");
+        else             $display("alu_tb FAILED with %0d errors", errors);
         $finish;
 
     end

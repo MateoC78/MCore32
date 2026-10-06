@@ -1,4 +1,4 @@
-module alu_nwidth_tb;
+module alu_tb;
 
     parameter WIDTH = 32;
 
@@ -22,7 +22,7 @@ module alu_nwidth_tb;
     integer errors = 0;
 
     // Instantiate DUT
-    alu_nwidth #(
+    alu #(
         .WIDTH(WIDTH)
     ) UUT (
         .input1  (input1),

@@ -65,9 +65,14 @@ module decoder (
     logic [6:0] funct7;
 
     // TODO: slice opcode, funct3 and funct7 out of instr
-
+    assign opcode = instr[6:0];
+    assign funct3 = instr[14:12];
+    assign funct7 = instr[31:25];
     // TODO: rs1, rs2 and rd are in the same place in every format,
     //       so they can be plain assigns
+    assign rs1 = instr[19:15];
+    assign rs2 = instr[24:20];
+    assign rd  = instr[11:7];
 
     // TODO: immediate generation
     //   - Pick the format from the opcode, then rebuild the immediate
@@ -98,6 +103,18 @@ module decoder (
             //   - rd = rs1 op rs2
             //   - alu_sel comes straight from {funct7[5], funct3}
             //   - illegal if funct7 isn't 0000000, or 0100000 for SUB/SRA
+            OP_REG: begin
+                alu_sel   = {funct7[5], funct3};
+                if (funct7 == 7'b0100000 && funct3 != 3'b000 && funct3 != 3'b101) begin
+                    illegal = 1'b1;
+                end else if (funct7 != 7'b0000000 && funct7 != 7'b0100000) begin
+                    illegal = 1'b1;
+                end else begin
+                    reg_we    = 1'b1;
+                    alu_a_sel = 2'd0;      // rs1
+                    alu_b_sel = 1'b0;      // rs2
+                end
+            end
 
             // TODO OP_IMM     (addi, slti, sltiu, xori, ori, andi, slli, srli, srai)
             //   - rd = rs1 op imm

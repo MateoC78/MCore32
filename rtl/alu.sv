@@ -1,4 +1,4 @@
-module alu_nwidth #(
+module alu #(
 parameter WIDTH = 32)
 (
 input logic [WIDTH-1:0] input1,

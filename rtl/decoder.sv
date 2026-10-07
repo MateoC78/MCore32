@@ -39,8 +39,9 @@ module decoder (
     // Write-back
     output logic [1:0]  wb_sel,     // value written to rd: 0 = ALU, 1 = memory, 2 = PC+4
 
-    // PC control
-    output logic        branch,     // conditional branch (compare type is funct3)
+    // PC control. For all three the ALU output is the target address.
+    output logic        branch,     // conditional branch to PC + imm
+    output logic [2:0]  branch_cond,// funct3: which rs1/rs2 comparison decides the branch
     output logic        jal,        // jump to PC + imm
     output logic        jalr,       // jump to (rs1 + imm) with bit 0 cleared
 
@@ -74,13 +75,39 @@ module decoder (
     assign rs2 = instr[24:20];
     assign rd  = instr[11:7];
 
-    // TODO: immediate generation
-    //   - Pick the format from the opcode, then rebuild the immediate
-    //     from the bit layout in the table at the top
+    // Immediate generation
+    //   - The format is picked from the opcode, then the immediate is
+    //     rebuilt from the bit layout in the table at the top
     //   - Everything except U-type is sign-extended from instr[31]
     //   - B and J immediates have an implicit 0 as bit 0
     //   - U-type puts instr[31:12] in the top 20 bits, low 12 bits are 0
-    //   - Consider a separate immgen module if this gets long
+    always_comb begin
+        case (opcode)
+            // I-type
+            OP_IMM, OP_LOAD, OP_JALR:
+                imm = {{20{instr[31]}}, instr[31:20]};
+
+            // S-type
+            OP_STORE:
+                imm = {{20{instr[31]}}, instr[31:25], instr[11:7]};
+
+            // B-type
+            OP_BRANCH:
+                imm = {{19{instr[31]}}, instr[31], instr[7], instr[30:25], instr[11:8], 1'b0};
+
+            // U-type
+            OP_LUI, OP_AUIPC:
+                imm = {instr[31:12], 12'b0};
+
+            // J-type
+            OP_JAL:
+                imm = {{11{instr[31]}}, instr[31], instr[19:12], instr[20], instr[30:21], 1'b0};
+
+            // R-type and anything else has no immediate
+            default:
+                imm = 32'b0;
+        endcase
+    end
 
     always_comb begin
         // Safe defaults: a do-nothing instruction. Each case below
@@ -94,6 +121,7 @@ module decoder (
         mem_size  = 3'b000;
         wb_sel    = 2'd0;      // ALU
         branch    = 1'b0;
+        branch_cond = 3'b000;
         jal       = 1'b0;
         jalr      = 1'b0;
         illegal   = 1'b0;
@@ -116,41 +144,125 @@ module decoder (
                 end
             end
 
-            // TODO OP_IMM     (addi, slti, sltiu, xori, ori, andi, slli, srli, srai)
+            // OP_IMM (addi, slti, sltiu, xori, ori, andi, slli, srli, srai)
             //   - rd = rs1 op imm
-            //   - Careful: instr[30] is part of the immediate here, except
-            //     for shifts. Only srai uses it as funct7[5]. addi must
-            //     NOT turn into a subtract when the immediate is negative.
+            //   - instr[30] is part of the immediate, except for shifts
+            //     where only srai uses it as funct7[5]. Otherwise a
+            //     negative addi would turn into a subtract.
+            //   - Shift amount is imm[4:0], which the ALU already uses
+            OP_IMM: begin
+                if (funct3 == 3'b001 && funct7 != 7'b0000000) begin
+                    illegal = 1'b1;    // slli
+                end else if (funct3 == 3'b101 && funct7 != 7'b0000000 && funct7 != 7'b0100000) begin
+                    illegal = 1'b1;    // srli / srai
+                end else begin
+                    alu_sel   = (funct3 == 3'b101) ? {funct7[5], funct3} : {1'b0, funct3};
+                    reg_we    = 1'b1;
+                    alu_a_sel = 2'd0;      // rs1
+                    alu_b_sel = 1'b1;      // imm
+                end
+            end
 
-            // TODO OP_LOAD    (lb, lh, lw, lbu, lhu)
+            // OP_LOAD (lb, lh, lw, lbu, lhu)
             //   - address = rs1 + imm, rd = memory data
-            //   - mem_size = funct3
+            //   - mem_size = funct3, the memory side does the byte select
+            //     and sign/zero extension
+            OP_LOAD: begin
+                if (funct3 == 3'b011 || funct3 == 3'b110 || funct3 == 3'b111) begin
+                    illegal = 1'b1;
+                end else begin
+                    alu_b_sel = 1'b1;      // rs1 + imm
+                    mem_re    = 1'b1;
+                    mem_size  = funct3;
+                    wb_sel    = 2'd1;      // memory
+                    reg_we    = 1'b1;
+                end
+            end
 
-            // TODO OP_STORE   (sb, sh, sw)
+            // OP_STORE (sb, sh, sw)
             //   - address = rs1 + imm, memory = rs2
             //   - no register write
+            OP_STORE: begin
+                if (funct3 != 3'b000 && funct3 != 3'b001 && funct3 != 3'b010) begin
+                    illegal = 1'b1;
+                end else begin
+                    alu_b_sel = 1'b1;      // rs1 + imm
+                    mem_we    = 1'b1;
+                    mem_size  = funct3;
+                end
+            end
 
-            // TODO OP_BRANCH  (beq, bne, blt, bge, bltu, bgeu)
-            //   - target = PC + imm, taken depends on comparing rs1 and rs2
-            //   - funct3 picks the comparison; decide whether the ALU
-            //     or a separate comparator does it
+            // OP_BRANCH (beq, bne, blt, bge, bltu, bgeu)
+            //   - ALU computes the target PC + imm
+            //   - A comparator outside the decoder compares rs1 and rs2
+            //     using branch_cond and decides if the branch is taken
             //   - no register write
+            OP_BRANCH: begin
+                if (funct3 == 3'b010 || funct3 == 3'b011) begin
+                    illegal = 1'b1;
+                end else begin
+                    alu_a_sel   = 2'd1;    // PC
+                    alu_b_sel   = 1'b1;    // imm
+                    branch      = 1'b1;
+                    branch_cond = funct3;
+                end
+            end
 
-            // TODO OP_JAL
-            //   - rd = PC + 4, PC = PC + imm
+            // OP_JAL
+            //   - rd = PC + 4, PC = PC + imm (computed by the ALU)
+            OP_JAL: begin
+                alu_a_sel = 2'd1;      // PC
+                alu_b_sel = 1'b1;      // imm
+                jal       = 1'b1;
+                wb_sel    = 2'd2;      // PC + 4
+                reg_we    = 1'b1;
+            end
 
-            // TODO OP_JALR
+            // OP_JALR
             //   - rd = PC + 4, PC = (rs1 + imm) & ~1
+            //   - the PC logic clears bit 0 of the ALU result
+            OP_JALR: begin
+                if (funct3 != 3'b000) begin
+                    illegal = 1'b1;
+                end else begin
+                    alu_b_sel = 1'b1;      // rs1 + imm
+                    jalr      = 1'b1;
+                    wb_sel    = 2'd2;      // PC + 4
+                    reg_we    = 1'b1;
+                end
+            end
 
-            // TODO OP_LUI
-            //   - rd = imm (U-type). Hint: zero + imm through the ALU
+            // OP_LUI
+            //   - rd = imm, done as zero + imm through the ALU
+            OP_LUI: begin
+                alu_a_sel = 2'd2;      // zero
+                alu_b_sel = 1'b1;      // imm
+                reg_we    = 1'b1;
+            end
 
-            // TODO OP_AUIPC
-            //   - rd = PC + imm (U-type)
+            // OP_AUIPC
+            //   - rd = PC + imm
+            OP_AUIPC: begin
+                alu_a_sel = 2'd1;      // PC
+                alu_b_sel = 1'b1;      // imm
+                reg_we    = 1'b1;
+            end
 
-            // TODO OP_FENCE, OP_SYSTEM
-            //   - Simple single-core option: treat FENCE as a no-op.
-            //     ECALL/EBREAK can be no-ops or flagged until you add traps.
+            // OP_FENCE
+            //   - Orders memory accesses. With one core and no caches every
+            //     access already happens in order, so it is a no-op.
+            OP_FENCE: begin
+                if (funct3 != 3'b000)
+                    illegal = 1'b1;
+            end
+
+            // OP_SYSTEM
+            //   - ECALL and EBREAK are no-ops until traps are added
+            //   - CSR instructions (Zicsr) aren't supported yet, so illegal
+            OP_SYSTEM: begin
+                if (instr != 32'h00000073 && instr != 32'h00100073)
+                    illegal = 1'b1;
+            end
 
             default: begin
                 illegal = 1'b1;

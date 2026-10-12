@@ -1,0 +1,19 @@
+// GPIO register test. See gpio_tb.sv for expected results.
+200000B7  // 000: lui  x1, 0x20000        # x1 = GPIO base
+0FF00113  // 004: addi x2, x0, 0xFF
+0020A423  // 008: sw   x2, 8(x1)          # DIR = 0x000000FF: pins 0-7 outputs
+05A00193  // 00C: addi x3, x0, 0x5A
+0030A223  // 010: sw   x3, 4(x1)          # OUT = 0x5A
+08100213  // 014: addi x4, x0, 0x81
+0040A623  // 018: sw   x4, 0xC(x1)        # OUT_SET 0x81: OUT = 0xDB
+00F00293  // 01C: addi x5, x0, 0x0F
+0050A823  // 020: sw   x5, 0x10(x1)       # OUT_CLR 0x0F: OUT = 0xD0
+03000313  // 024: addi x6, x0, 0x30
+0060AA23  // 028: sw   x6, 0x14(x1)       # OUT_TGL 0x30: OUT = 0xE0
+0040A383  // 02C: lw   x7, 4(x1)          # x7 = 0x000000E0 (OUT)
+0080A403  // 030: lw   x8, 8(x1)          # x8 = 0x000000FF (DIR)
+0000A483  // 034: lw   x9, 0(x1)          # x9 = 0xABCD12E0 (IN: outputs + external pins)
+002082A3  // 038: sb   x2, 5(x1)          # byte 1 of OUT = 0xFF: OUT = 0xFFE0
+0040A503  // 03C: lw   x10, 4(x1)         # x10 = 0x0000FFE0
+0180A583  // 040: lw   x11, 0x18(x1)      # unused offset: x11 = 0
+0000006F  // 044: jal  x0, 0              # done: loop forever

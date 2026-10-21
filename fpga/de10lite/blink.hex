@@ -1,0 +1,16 @@
+// Blink: LED0 toggles about twice a second, LED1-LED9 follow SW1-SW9.
+// 25 MHz core, 7 cycles per delay pass: 917504 * 7 / 25e6 = 0.257 s per toggle.
+200000B7  // 000: lui  x1, 0x20000        # x1 = GPIO base
+3FF00113  // 004: addi x2, x0, 0x3FF
+0020A423  // 008: sw   x2, 8(x1)          # DIR = 0x3FF: pins 0-9 (LEDs) outputs
+00100193  // 00C: addi x3, x0, 1          # x3 = blink state for LED0
+000E0337  // 010: lui  x6, 0xE0           # loop: x6 = 0xE0000 = 917504 passes (~0.26 s at 25 MHz)
+0000A203  // 014: lw   x4, 0(x1)          # delay: x4 = IN
+01025213  // 018: srli x4, x4, 16         # SW[9:0] down to bits 9-0
+3FE27213  // 01C: andi x4, x4, 0x3FE      # keep SW1-SW9 (LED0 is the blinker)
+003262B3  // 020: or   x5, x4, x3         # add the blink bit
+0050A223  // 024: sw   x5, 4(x1)          # OUT = LEDs
+FFF30313  // 028: addi x6, x6, -1
+FE0314E3  // 02C: bne  x6, x0, delay      # 7 instructions (cycles) per pass
+0011C193  // 030: xori x3, x3, 1          # flip LED0
+FDDFF06F  // 034: jal  x0, loop

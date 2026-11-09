@@ -78,6 +78,7 @@ module mcore32_de10lite #(
         else
             rst_sync <= {rst_sync[1:0], 1'b0}; // Shift in 0s
     end
+    assign rst = rst_sync[2];
 
     // ------------------------------------------------------------------
     // SoC
